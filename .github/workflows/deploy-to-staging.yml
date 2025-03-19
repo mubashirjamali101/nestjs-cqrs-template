@@ -1,0 +1,81 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches:
+      - staging
+
+env:
+  NODE_VERSION: 20
+  PNPM_VERSION: 10.5.1
+  PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+  SHELL: /bin/bash
+
+jobs:
+  staging-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Architectural Preparation Phase: Precise Repository Extraction
+      - name: 🌐 Strategic Repository Extraction
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1 # Optimized clone strategy
+
+      # Node.js & Dependency Management: Intelligent Provisioning
+      - name: 🔬 Advanced Runtime Configuration
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Build Preparation: Deterministic Compilation
+      - name: 🚀 Precision Build Execution
+        run: |
+          npm i -g pnpm
+          pnpm install
+          pnpm -dlx prisma generate
+          pnpm run build
+          pnpm prune --prod
+
+      - name: Archive node modules
+        run: tar -czvf node_modules.tar.gz ./node_modules
+
+      - name: Archive build
+        run: tar -czvf build.tar.gz ./dist
+
+      - name: Copy archived build to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.STAGING_EC2_HOST }}
+          username: ${{ secrets.STAGING_EC2_USER }}
+          key: ${{ secrets.STAGING_EC2_SSH_PRIVATE_KEY }}
+          port: 22
+          source: 'build.tar.gz'
+          target: '~/app/'
+          debug: true
+
+      - name: Copy archived node_modules to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.STAGING_EC2_HOST }}
+          username: ${{ secrets.STAGING_EC2_USER }}
+          key: ${{ secrets.STAGING_EC2_SSH_PRIVATE_KEY }}
+          port: 22
+          source: 'node_modules.tar.gz'
+          target: '~/app/'
+          debug: true
+
+      # Secure Deployment Mechanism: Staged Infrastructure Transmission
+      - name: 🔐 Staged Infrastructure Deployment
+        env:
+          STAGING_EC2_PRIVATE_KEY: ${{ secrets.STAGING_EC2_SSH_PRIVATE_KEY }}
+          STAGING_EC2_HOST: ${{ secrets.STAGING_EC2_HOST }}
+          STAGING_EC2_USER: ${{ secrets.STAGING_EC2_USER }}
+        run: |
+          echo "$STAGING_EC2_PRIVATE_KEY" > staging_deploy_key.pem
+          chmod 600 staging_deploy_key.pem
+
+          # Remote Execution Protocol
+          ssh -o StrictHostKeyChecking=no -i staging_deploy_key.pem \
+            $STAGING_EC2_USER@$STAGING_EC2_HOST \
+            "~/deploy.sh"
